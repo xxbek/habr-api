@@ -6,7 +6,7 @@ from time import sleep
 
 
 class HabrParser:
-    """This class crawle habr-crawler.com  """
+    """This class crawle habr.ru"""
     URL = 'https://habr.com'
 
     HEADERS = {
@@ -14,20 +14,18 @@ class HabrParser:
         'Accept': '*/*'
     }
 
-    PARAMS = {
+    params = {
         # 'q': brand - from input,
         'target_type': 'posts',
         'order': 'relevance'
     }
 
     # TODO add redis
-    def __init__(self, brand):
-        # self.db = db
-        self.brand = brand
+    def __init__(self, db, params):
+        self.db = db
+        self.params = params
 
-    def run_parser(self, num_of_article: int):
-        self.PARAMS['q'] = self.brand
-
+    def run_parser(self, num_of_article=10):
         # TODO add logging
         try:
             # in get_article_list we make get request
@@ -49,7 +47,6 @@ class HabrParser:
         return json_data
 
     def _parse_single_article(self, url: str) -> dict:
-        sleep(1)
         req = requests.get(url)
         src = req.text
 
@@ -81,7 +78,7 @@ class HabrParser:
         # TODO if num > 10000, paginator link active
         # TODO add "ALL" num and default article num
         while num_of_article > 0:
-            req = requests.get(self.URL + f'/search/page{page}', params=self.PARAMS, headers=self.HEADERS)
+            req = requests.get(self.URL + f'/search/page{page}', params=self.params, headers=self.HEADERS)
             src = req.text
 
             soup = BeautifulSoup(src, 'lxml')
@@ -89,7 +86,7 @@ class HabrParser:
             empty_page = soup.find('div', class_='tm-empty-placeholder')
             if empty_page:
                 return []
-
+            # https://habr.com/ru/search/page1/?target_type=posts&order=relevance&q=python
             all_article = soup.find('div', class_='tm-articles-list')
             if num_of_article <= 20:
                 article_list += all_article.find_all('article', class_='tm-articles-list__item')[:num_of_article:]
@@ -102,16 +99,27 @@ class HabrParser:
         return article_list
 
     def _parse_all_articles_into_dict(self, articles: list) -> dict:
-        result_dict = {'habr-crawler.com': {}}
+        result_dict = {}
+
         for i, article in enumerate(articles):
             article_url = article.find('a', class_='tm-article-snippet__title-link')['href']
-            if 'post' in article_url:
-                article_url = self.URL + article_url
+            article_url = self.URL + article_url
+
+            # Search data in redis
+            data_redis = self.db.find_data(article_url)
+
+            if data_redis:
+                print(f'Data is founded in DB: {article_url}')
+            elif 'post' in article_url:
                 print(f'Article #{i+1}', article_url)
 
                 # make get request and parse data from article
                 article_data = self._parse_single_article(article_url)
-                result_dict['habr-crawler.com'][i] = article_data
+                result_dict[i] = article_data
+
+                # Save in redis
+                string_result = json.dumps(result_dict)
+                self.db.save_data(article_url, string_result)
             else:
                 print(f'Article #{i+1} is not post, its url: {article_url}')
 
@@ -119,5 +127,8 @@ class HabrParser:
 
     def _dict_to_json(self, dict):
         return json.dumps(dict, indent=4, ensure_ascii=False)
+
+    def sleep(self, time):
+        sleep(time)
 
 

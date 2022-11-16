@@ -1,22 +1,20 @@
 from crawler_tools.habr_parser import HabrParser
-import argparse
-import logging
-import json
+from crawler_tools.utils.utils import Utils
+from crawler_tools.redis_db.db import Db
+
+# TODO make code review
+# TODO add logging
 
 if __name__ == '__main__':
-    # TODO add import from json config with headers, brand, nums
-    # TODO add delay and while True
-    arg_parser = argparse.ArgumentParser('seach data in habr-crawler.com')
-    arg_parser.add_argument('--num', help='Input the nums of article')
-    arg_parser.add_argument('--brand', help='Input the researched item')
-    args = arg_parser.parse_args()
+    config = Utils.load_json_file('config.json.sample')
+    host, port, password = config['redis']['host'], config['redis']['port'], config['redis']['password']
+    db = Db(host, port, password)
 
-    num = 40
-    # int(args.num)
-    brand = 'editor-js codex'
+    while True:
+        habr_parser = HabrParser(db, config['keywords'])
+        result = habr_parser.run_parser(config['num'])
+        if result:
+            with open('result', 'a') as f:
+                f.write(result)
 
-    habr_parser = HabrParser(brand)
-    result = habr_parser.run_parser(num)
-
-    with open('result', 'w') as f:
-        f.write(result)
+        habr_parser.sleep(config['delay'])
